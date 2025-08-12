@@ -62,8 +62,10 @@ const errorResponse = (res, message = 'Error occurred', statusCode = 500, detail
 
 // Pagination helper
 const paginateResults = (page = 1, limit = 10) => {
-  const offset = (page - 1) * limit;
-  return { offset, limit: parseInt(limit) };
+  const pageNum = parseInt(page) || 1;
+  const limitNum = parseInt(limit) || 10;
+  const offset = parseInt((pageNum - 1) * limitNum);
+  return { offset, limit: limitNum };
 };
 
 // Sanitize user input
