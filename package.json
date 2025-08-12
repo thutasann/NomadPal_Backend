@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "server.js",
+    "dev": "node server.js --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": ["digital-nomad", "recommendation-system", "api", "express", "mysql"],

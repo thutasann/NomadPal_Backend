@@ -18,7 +18,23 @@ const { pool } = require('../config/database');
 // User Registration
 router.post('/register', validateUserRegistration, async (req, res) => {
   try {
-    const { email, password, display_name } = req.body;
+    const { 
+      email, 
+      password, 
+      display_name,
+      preferred_language,
+      country_city,
+      timezone,
+      passport,
+      job_title,
+      monthly_budget_min_usd,
+      monthly_budget_max_usd,
+      preferred_climate,
+      internet_speed_requirement,
+      lifestyle_priorities,
+      newsletter_consent,
+      research_consent
+    } = req.body;
     
     // Check if user already exists
     const [existingUsers] = await pool.execute(
@@ -34,11 +50,22 @@ router.post('/register', validateUserRegistration, async (req, res) => {
     const userId = generateId();
     const passwordHash = await hashPassword(password);
 
-    // Insert new user
+    // Insert new user with all fields
     await pool.execute(
-      `INSERT INTO users (id, email, password_hash, display_name) 
-       VALUES (?, ?, ?, ?)`,
-      [userId, email, passwordHash, display_name || null]
+      `INSERT INTO users (
+        id, email, password_hash, display_name, preferred_language, 
+        country_city, timezone, passport, job_title, monthly_budget_min_usd,
+        monthly_budget_max_usd, preferred_climate, internet_speed_requirement,
+        lifestyle_priorities, newsletter_consent, research_consent
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userId, email, passwordHash, display_name || null, preferred_language || null,
+        country_city || null, timezone || null, passport || null, job_title || null,
+        monthly_budget_min_usd || null, monthly_budget_max_usd || null,
+        preferred_climate || null, internet_speed_requirement || null,
+        lifestyle_priorities ? JSON.stringify(lifestyle_priorities) : null,
+        newsletter_consent || false, research_consent || false
+      ]
     );
 
     // Generate JWT token
@@ -46,7 +73,11 @@ router.post('/register', validateUserRegistration, async (req, res) => {
 
     // Get created user (without password)
     const [newUser] = await pool.execute(
-      'SELECT id, email, display_name, created_at FROM users WHERE id = ?',
+      `SELECT id, email, display_name, preferred_language, country_city, 
+              timezone, passport, job_title, monthly_budget_min_usd,
+              monthly_budget_max_usd, preferred_climate, internet_speed_requirement,
+              lifestyle_priorities, newsletter_consent, research_consent, created_at 
+       FROM users WHERE id = ?`,
       [userId]
     );
 
@@ -108,11 +139,9 @@ router.get('/me', authenticateToken, async (req, res) => {
 
     const [users] = await pool.execute(
       `SELECT id, email, display_name, preferred_language, country_city, 
-              timezone, passport, visa_flexibility, preferred_regions, job_title,
-              target_salary_usd, salary_currency, sources, work_style,
-              monthly_budget_min_usd, monthly_budget_max_usd, preferred_climate,
-              internet_speed_requirement, lifestyle_priorities, newsletter_consent,
-              research_consent, created_at
+              timezone, passport, job_title, monthly_budget_min_usd,
+              monthly_budget_max_usd, preferred_climate, internet_speed_requirement,
+              lifestyle_priorities, newsletter_consent, research_consent, created_at 
        FROM users WHERE id = ?`,
       [userId]
     );

@@ -1,3 +1,4 @@
+require('dotenv').config();
 const mysql = require('mysql2/promise');
 
 const dbConfig = {
@@ -57,6 +58,92 @@ const initializeDatabase = async () => {
         newsletter_consent BOOLEAN DEFAULT FALSE,
         research_consent BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create cities table
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS cities (
+        id CHAR(24) PRIMARY KEY,
+        slug VARCHAR(128) NOT NULL UNIQUE,
+        name VARCHAR(128) NOT NULL,
+        country VARCHAR(128) NOT NULL,
+        iso2 CHAR(2),
+        lat DECIMAL(9,6),
+        lon DECIMAL(9,6),
+        hero_image_url VARCHAR(512),
+        description TEXT,
+        visa_requirement_us TEXT,
+        monthly_cost_usd DECIMAL(10,2),
+        avg_pay_rate_usd_hour DECIMAL(8,2),
+        weather_avg_temp_c DECIMAL(4,1),
+        safety_score DECIMAL(5,2),
+        nightlife_rating DECIMAL(4,2),
+        transport_rating DECIMAL(4,2),
+        housing_studio_usd_month DECIMAL(10,2),
+        housing_one_bed_usd_month DECIMAL(10,2),
+        housing_coliving_usd_month DECIMAL(10,2),
+        climate_avg_temp_c DECIMAL(4,1),
+        climate_summary VARCHAR(128),
+        sunshine_hours_year INT,
+        cost_pct_rent DECIMAL(5,2),
+        cost_pct_dining DECIMAL(5,2),
+        cost_pct_transport DECIMAL(5,2),
+        cost_pct_groceries DECIMAL(5,2),
+        cost_pct_coworking DECIMAL(5,2),
+        cost_pct_other DECIMAL(5,2),
+        travel_flight_from_usd DECIMAL(10,2),
+        travel_local_transport_usd_week DECIMAL(10,2),
+        travel_hotel_usd_week DECIMAL(10,2),
+        lifestyle_tags JSON,
+        currency CHAR(3) DEFAULT 'USD',
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create jobs table
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS jobs (
+        id CHAR(24) PRIMARY KEY,
+        city_id CHAR(24),
+        title VARCHAR(255) NOT NULL,
+        company VARCHAR(255),
+        location VARCHAR(255),
+        category VARCHAR(128),
+        job_type VARCHAR(64),
+        posted_date DATE,
+        min_salary DECIMAL(12,2),
+        max_salary DECIMAL(12,2),
+        salary_currency CHAR(3) DEFAULT 'USD',
+        salary_period VARCHAR(32),
+        description TEXT,
+        source VARCHAR(128),
+        source_url VARCHAR(512),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (city_id) REFERENCES cities(id)
+      )
+    `);
+
+    // Create saved_cities table
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS saved_cities (
+        user_id CHAR(24),
+        city_id CHAR(24),
+        PRIMARY KEY (user_id, city_id),
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (city_id) REFERENCES cities(id)
+      )
+    `);
+
+    // Create saved_jobs table
+    await connection.execute(`
+      CREATE TABLE IF NOT EXISTS saved_jobs (
+        user_id CHAR(24),
+        job_id CHAR(24),
+        status VARCHAR(64),
+        PRIMARY KEY (user_id, job_id),
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (job_id) REFERENCES jobs(id)
       )
     `);
 

@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 3000;
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: "*",
   credentials: true
 }));
 
@@ -35,10 +35,13 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(compression());
 
 // Logging middleware
-app.use(morgan('combined'));
+app.use(morgan('short'), (req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK', 
     message: 'NomadPal API is running',
