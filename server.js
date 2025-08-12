@@ -6,6 +6,9 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
+// Import database functions
+const { testConnection, initializeDatabase } = require('./config/database');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -47,9 +50,9 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/users', require('./routes/user.routes'));
 app.use('/api/cities', require('./routes/city.routes'));
-app.use('/api/jobs', require('./routes/job.routes'));
-app.use('/api/recommendations', require('./routes/recommendation.routes'));
-app.use('/api/travel', require('./routes/travel.routes'));
+// app.use('/api/jobs', require('./routes/job.routes'));
+// app.use('/api/recommendations', require('./routes/recommendation.routes'));
+// app.use('/api/travel', require('./routes/travel.routes'));
 
 // 404 handler
 app.use('*', (req, res) => {
@@ -74,11 +77,31 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 NomadPal API server running on port ${PORT}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
-});
+// Start server with database connection
+const startServer = async () => {
+  try {
+    // Test database connection first
+    console.log('🔌 Testing database connection...');
+    await testConnection();
+    
+    // Initialize database tables
+    console.log('🗄️ Initializing database tables...');
+    await initializeDatabase();
+    
+    // Start the server only after successful database connection
+    app.listen(PORT, () => {
+      console.log(`🚀 NomadPal API server running on port ${PORT}`);
+      console.log(`📊 Health check: http://localhost:${PORT}/health`);
+      console.log(`🔗 API Base URL: http://localhost:${PORT}/api`);
+      console.log(`✅ Server started successfully with database connection`);
+    });
+  } catch (error) {
+    console.error('❌ Failed to start server:', error.message);
+    process.exit(1);
+  }
+};
+
+// Start the server
+startServer();
 
 module.exports = app;
