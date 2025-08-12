@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": ["digital-nomad", "recommendation-system", "api", "express", "mysql"],
@@ -27,7 +27,6 @@
     "morgan": "^1.10.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
   },
   "engines": {
     "node": ">=16.0.0"

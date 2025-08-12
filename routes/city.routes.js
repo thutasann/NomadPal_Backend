@@ -1,0 +1,406 @@
+const express = require('express');
+const router = express.Router();
+const { optionalAuth } = require('../middleware/auth.middleware');
+const { 
+  successResponse,
+  errorResponse,
+  paginateResults,
+  sanitizeInput 
+} = require('../utils/helpers');
+const { pool } = require('../config/database');
+
+// Get all cities with pagination and filters
+router.get('/', optionalAuth, async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 20, 
+      country, 
+      climate, 
+      min_cost, 
+      max_cost,
+      min_safety,
+      sort_by = 'name',
+      sort_order = 'ASC'
+    } = req.query;
+
+    const { offset, limit: queryLimit } = paginateResults(page, limit);
+
+    // Build WHERE clause
+    let whereClause = 'WHERE 1=1';
+    const whereParams = [];
+
+    if (country) {
+      whereClause += ' AND country LIKE ?';
+      whereParams.push(`%${sanitizeInput(country)}%`);
+    }
+
+    if (climate) {
+      whereClause += ' AND climate_summary LIKE ?';
+      whereParams.push(`%${sanitizeInput(climate)}%`);
+    }
+
+    if (min_cost) {
+      whereClause += ' AND monthly_cost_usd >= ?';
+      whereParams.push(parseFloat(min_cost));
+    }
+
+    if (max_cost) {
+      whereClause += ' AND monthly_cost_usd <= ?';
+      whereParams.push(parseFloat(max_cost));
+    }
+
+    if (min_safety) {
+      whereClause += ' AND safety_score >= ?';
+      whereParams.push(parseFloat(min_safety));
+    }
+
+    // Validate sort parameters
+    const allowedSortFields = ['name', 'country', 'monthly_cost_usd', 'safety_score', 'nightlife_rating', 'transport_rating'];
+    const allowedSortOrders = ['ASC', 'DESC'];
+    
+    const sortField = allowedSortFields.includes(sort_by) ? sort_by : 'name';
+    const sortOrder = allowedSortOrders.includes(sort_order.toUpperCase()) ? sort_order.toUpperCase() : 'ASC';
+
+    // Get total count
+    const [countResult] = await pool.execute(
+      `SELECT COUNT(*) as total FROM cities ${whereClause}`,
+      whereParams
+    );
+    const total = countResult[0].total;
+
+    // Get cities
+    const [cities] = await pool.execute(
+      `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
+              monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
+              nightlife_rating, transport_rating, housing_studio_usd_month, 
+              housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c,
+              climate_summary, sunshine_hours_year, cost_pct_rent, cost_pct_dining,
+              cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other,
+              travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week,
+              lifestyle_tags, currency, last_updated
+       FROM cities ${whereClause}
+       ORDER BY ${sortField} ${sortOrder}
+       LIMIT ? OFFSET ?`,
+      [...whereParams, queryLimit, offset]
+    );
+
+    // Add saved status for authenticated users
+    if (req.user) {
+      for (let city of cities) {
+        const [savedResult] = await pool.execute(
+          'SELECT 1 FROM saved_cities WHERE user_id = ? AND city_id = ?',
+          [req.user.id, city.id]
+        );
+        city.is_saved = savedResult.length > 0;
+      }
+    }
+
+    const totalPages = Math.ceil(total / queryLimit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    successResponse(res, {
+      cities,
+      pagination: {
+        current_page: parseInt(page),
+        total_pages: totalPages,
+        total_items: total,
+        items_per_page: queryLimit,
+        has_next_page: hasNextPage,
+        has_prev_page: hasPrevPage
+      }
+    }, 'Cities retrieved successfully');
+
+  } catch (error) {
+    console.error('Get cities error:', error);
+    errorResponse(res, 'Failed to retrieve cities', 500);
+  }
+});
+
+// Get city by ID
+router.get('/:id', optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [cities] = await pool.execute(
+      `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
+              visa_requirement_us, monthly_cost_usd, avg_pay_rate_usd_hour, 
+              weather_avg_temp_c, safety_score, nightlife_rating, transport_rating,
+              housing_studio_usd_month, housing_one_bed_usd_month, housing_coliving_usd_month,
+              climate_avg_temp_c, climate_summary, sunshine_hours_year, cost_pct_rent,
+              cost_pct_dining, cost_pct_transport, cost_pct_groceries, cost_pct_coworking,
+              cost_pct_other, travel_flight_from_usd, travel_local_transport_usd_week,
+              travel_hotel_usd_week, lifestyle_tags, currency, last_updated
+       FROM cities WHERE id = ?`,
+      [id]
+    );
+
+    if (cities.length === 0) {
+      return errorResponse(res, 'City not found', 404);
+    }
+
+    const city = cities[0];
+
+    // Add saved status for authenticated users
+    if (req.user) {
+      const [savedResult] = await pool.execute(
+        'SELECT 1 FROM saved_cities WHERE user_id = ? AND city_id = ?',
+        [req.user.id, id]
+      );
+      city.is_saved = savedResult.length > 0;
+    }
+
+    successResponse(res, city, 'City retrieved successfully');
+
+  } catch (error) {
+    console.error('Get city error:', error);
+    errorResponse(res, 'Failed to retrieve city', 500);
+  }
+});
+
+// Get city by slug
+router.get('/slug/:slug', optionalAuth, async (req, res) => {
+  try {
+    const { slug } = req.params;
+
+    const [cities] = await pool.execute(
+      `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
+              visa_requirement_us, monthly_cost_usd, avg_pay_rate_usd_hour, 
+              weather_avg_temp_c, safety_score, nightlife_rating, transport_rating,
+              housing_studio_usd_month, housing_one_bed_usd_month, housing_coliving_usd_month,
+              climate_avg_temp_c, climate_summary, sunshine_hours_year, cost_pct_rent,
+              cost_pct_dining, cost_pct_transport, cost_pct_groceries, cost_pct_coworking,
+              cost_pct_other, travel_flight_from_usd, travel_local_transport_usd_week,
+              travel_hotel_usd_week, lifestyle_tags, currency, last_updated
+       FROM cities WHERE slug = ?`,
+      [slug]
+    );
+
+    if (cities.length === 0) {
+      return errorResponse(res, 'City not found', 404);
+    }
+
+    const city = cities[0];
+
+    // Add saved status for authenticated users
+    if (req.user) {
+      const [savedResult] = await pool.execute(
+        'SELECT 1 FROM saved_cities WHERE user_id = ? AND city_id = ?',
+        [req.user.id, city.id]
+      );
+      city.is_saved = savedResult.length > 0;
+    }
+
+    successResponse(res, city, 'City retrieved successfully');
+
+  } catch (error) {
+    console.error('Get city by slug error:', error);
+    errorResponse(res, 'Failed to retrieve city', 500);
+  }
+});
+
+// Get cities by country
+router.get('/country/:country', optionalAuth, async (req, res) => {
+  try {
+    const { country } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    const { offset, limit: queryLimit } = paginateResults(page, limit);
+
+    // Get total count
+    const [countResult] = await pool.execute(
+      'SELECT COUNT(*) as total FROM cities WHERE country LIKE ?',
+      [`%${sanitizeInput(country)}%`]
+    );
+    const total = countResult[0].total;
+
+    // Get cities
+    const [cities] = await pool.execute(
+      `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
+              monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
+              nightlife_rating, transport_rating, climate_avg_temp_c, climate_summary,
+              lifestyle_tags, currency
+       FROM cities 
+       WHERE country LIKE ?
+       ORDER BY name
+       LIMIT ? OFFSET ?`,
+      [`%${sanitizeInput(country)}%`, queryLimit, offset]
+    );
+
+    // Add saved status for authenticated users
+    if (req.user) {
+      for (let city of cities) {
+        const [savedResult] = await pool.execute(
+          'SELECT 1 FROM saved_cities WHERE user_id = ? AND city_id = ?',
+          [req.user.id, city.id]
+        );
+        city.is_saved = savedResult.length > 0;
+      }
+    }
+
+    const totalPages = Math.ceil(total / queryLimit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    successResponse(res, {
+      cities,
+      pagination: {
+        current_page: parseInt(page),
+        total_pages: totalPages,
+        total_items: total,
+        items_per_page: queryLimit,
+        has_next_page: hasNextPage,
+        has_prev_page: hasPrevPage
+      }
+    }, 'Cities retrieved successfully');
+
+  } catch (error) {
+    console.error('Get cities by country error:', error);
+    errorResponse(res, 'Failed to retrieve cities', 500);
+  }
+});
+
+// Get cost of living breakdown for a city
+router.get('/:id/cost-breakdown', optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [cities] = await pool.execute(
+      `SELECT name, country, monthly_cost_usd, cost_pct_rent, cost_pct_dining,
+              cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other,
+              housing_studio_usd_month, housing_one_bed_usd_month, housing_coliving_usd_month,
+              travel_local_transport_usd_week, travel_hotel_usd_week, currency
+       FROM cities WHERE id = ?`,
+      [id]
+    );
+
+    if (cities.length === 0) {
+      return errorResponse(res, 'City not found', 404);
+    }
+
+    const city = cities[0];
+
+    // Calculate cost breakdown
+    const costBreakdown = {
+      city_name: city.name,
+      country: city.country,
+      total_monthly_cost: city.monthly_cost_usd,
+      currency: city.currency,
+      breakdown: {
+        housing: {
+          studio: city.housing_studio_usd_month,
+          one_bedroom: city.housing_one_bed_usd_month,
+          coliving: city.housing_coliving_usd_month,
+          percentage: city.cost_pct_rent
+        },
+        dining: {
+          percentage: city.cost_pct_dining,
+          estimated_monthly: (city.monthly_cost_usd * city.cost_pct_dining / 100)
+        },
+        transport: {
+          percentage: city.cost_pct_transport,
+          estimated_monthly: (city.monthly_cost_usd * city.cost_pct_transport / 100),
+          weekly_local: city.travel_local_transport_usd_week
+        },
+        groceries: {
+          percentage: city.cost_pct_groceries,
+          estimated_monthly: (city.monthly_cost_usd * city.cost_pct_groceries / 100)
+        },
+        coworking: {
+          percentage: city.cost_pct_coworking,
+          estimated_monthly: (city.monthly_cost_usd * city.cost_pct_coworking / 100)
+        },
+        other: {
+          percentage: city.cost_pct_other,
+          estimated_monthly: (city.monthly_cost_usd * city.cost_pct_other / 100)
+        }
+      },
+      travel_costs: {
+        local_transport_weekly: city.travel_local_transport_usd_week,
+        hotel_weekly: city.travel_hotel_usd_week
+      }
+    };
+
+    successResponse(res, costBreakdown, 'Cost breakdown retrieved successfully');
+
+  } catch (error) {
+    console.error('Get cost breakdown error:', error);
+    errorResponse(res, 'Failed to retrieve cost breakdown', 500);
+  }
+});
+
+// Search cities
+router.get('/search/:query', optionalAuth, async (req, res) => {
+  try {
+    const { query } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    const { offset, limit: queryLimit } = paginateResults(page, limit);
+    const searchQuery = sanitizeInput(query);
+
+    // Get total count
+    const [countResult] = await pool.execute(
+      `SELECT COUNT(*) as total FROM cities 
+       WHERE name LIKE ? OR country LIKE ? OR description LIKE ?`,
+      [`%${searchQuery}%`, `%${searchQuery}%`, `%${searchQuery}%`]
+    );
+    const total = countResult[0].total;
+
+    // Search cities
+    const [cities] = await pool.execute(
+      `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
+              monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
+              climate_avg_temp_c, climate_summary, lifestyle_tags, currency
+       FROM cities 
+       WHERE name LIKE ? OR country LIKE ? OR description LIKE ?
+       ORDER BY 
+         CASE 
+           WHEN name LIKE ? THEN 1
+           WHEN country LIKE ? THEN 2
+           ELSE 3
+         END,
+         name
+       LIMIT ? OFFSET ?`,
+      [
+        `%${searchQuery}%`, `%${searchQuery}%`, `%${searchQuery}%`,
+        `${searchQuery}%`, `${searchQuery}%`,
+        queryLimit, offset
+      ]
+    );
+
+    // Add saved status for authenticated users
+    if (req.user) {
+      for (let city of cities) {
+        const [savedResult] = await pool.execute(
+          'SELECT 1 FROM saved_cities WHERE user_id = ? AND city_id = ?',
+          [req.user.id, city.id]
+        );
+        city.is_saved = savedResult.length > 0;
+      }
+    }
+
+    const totalPages = Math.ceil(total / queryLimit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    successResponse(res, {
+      cities,
+      search_query: searchQuery,
+      pagination: {
+        current_page: parseInt(page),
+        total_pages: totalPages,
+        total_items: total,
+        items_per_page: queryLimit,
+        has_next_page: hasNextPage,
+        has_prev_page: hasPrevPage
+      }
+    }, 'Search completed successfully');
+
+  } catch (error) {
+    console.error('Search cities error:', error);
+    errorResponse(res, 'Search failed', 500);
+  }
+});
+
+module.exports = router;
