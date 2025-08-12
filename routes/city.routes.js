@@ -429,30 +429,46 @@ router.get('/', optionalAuth, async (req, res) => {
     console.log('Final query params:', finalParams);
     console.log('Parameter types:', finalParams.map(p => ({ value: p, type: typeof p, isNaN: isNaN(p) })));
 
-    // Get cities - start with a simple query to test
+    // Get cities - return full city data for proper filtering
     console.log('Executing cities query with params:', finalParams);
-    console.log('SQL Query:', `SELECT id, name, country FROM cities ${whereClause} ORDER BY ${sortField} ${sortOrder} LIMIT ? OFFSET ?`);
+    console.log('SQL Query:', `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description, monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score, nightlife_rating, transport_rating, housing_studio_usd_month, housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c, climate_summary, sunshine_hours_year, cost_pct_rent, cost_pct_dining, cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other, travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week, lifestyle_tags, currency, last_updated FROM cities ${whereClause} ORDER BY ${sortField} ${sortOrder} LIMIT ? OFFSET ?`);
     
     let cities;
     
     // If no filters, try a simple query first
     if (whereParams.length === 0) {
-      console.log('No filters, trying simple query...');
+      console.log('No filters, trying full data query...');
       try {
         const [simpleResult] = await pool.query(
-          'SELECT id, name, country FROM cities ORDER BY name ASC LIMIT ? OFFSET ?',
+          `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description, 
+                  monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
+                  nightlife_rating, transport_rating, housing_studio_usd_month, 
+                  housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c,
+                  climate_summary, sunshine_hours_year, cost_pct_rent, cost_pct_dining,
+                  cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other,
+                  travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week,
+                  lifestyle_tags, currency, last_updated
+           FROM cities ORDER BY name ASC LIMIT ? OFFSET ?`,
           [finalLimit, finalOffset]
         );
         cities = simpleResult;
-        console.log('Simple query successful, got', cities.length, 'cities');
+        console.log('Full data query successful, got', cities.length, 'cities');
       } catch (simpleError) {
-        console.error('Simple query failed:', simpleError);
+        console.error('Full data query failed:', simpleError);
         throw simpleError;
       }
     } else {
       // Try using query instead of execute to avoid parameter binding issues
       const [citiesResult] = await pool.query(
-        `SELECT id, name, country FROM cities ${whereClause} ORDER BY ${sortField} ${sortOrder} LIMIT ? OFFSET ?`,
+        `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
+                monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
+                nightlife_rating, transport_rating, housing_studio_usd_month, 
+                housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c,
+                climate_summary, sunshine_hours_year, cost_pct_rent, cost_pct_dining,
+                cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other,
+                travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week,
+                lifestyle_tags, currency, last_updated
+         FROM cities ${whereClause} ORDER BY ${sortField} ${sortOrder} LIMIT ? OFFSET ?`,
         finalParams
       );
       cities = citiesResult;
