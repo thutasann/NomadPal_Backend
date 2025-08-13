@@ -15,7 +15,7 @@ router.get('/popular', optionalAuth, async (req, res) => {
     const { limit = 10 } = req.query;
 
     const [cities] = await pool.execute(
-      `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
+      `SELECT id, slug, name, country, description,
               monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
               nightlife_rating, transport_rating, climate_avg_temp_c, climate_summary,
               lifestyle_tags, currency
@@ -133,11 +133,11 @@ router.get('/filter', optionalAuth, async (req, res) => {
 
     // Get cities
     const [cities] = await pool.execute(
-      `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
+      `SELECT id, slug, name, country, description,
               monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
               nightlife_rating, transport_rating, housing_studio_usd_month, 
               housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c,
-              climate_summary, sunshine_hours_year, cost_pct_rent, cost_pct_dining,
+              climate_summary, internet_speed, cost_pct_rent, cost_pct_dining,
               cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other,
               travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week,
               lifestyle_tags, currency, last_updated
@@ -203,7 +203,7 @@ router.get('/search/:query', optionalAuth, async (req, res) => {
 
     // Search cities
     const [cities] = await pool.execute(
-      `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
+      `SELECT id, slug, name, country, description,
               monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
               climate_avg_temp_c, climate_summary, lifestyle_tags, currency
        FROM cities 
@@ -279,7 +279,7 @@ router.get('/country/:country', optionalAuth, async (req, res) => {
 
     // Get cities by country
     const [cities] = await pool.execute(
-      `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
+      `SELECT id, slug, name, country, description,
               monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
               nightlife_rating, transport_rating, climate_avg_temp_c, climate_summary,
               lifestyle_tags, currency
@@ -431,7 +431,7 @@ router.get('/', optionalAuth, async (req, res) => {
 
     // Get cities - return full city data for proper filtering
     console.log('Executing cities query with params:', finalParams);
-    console.log('SQL Query:', `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description, monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score, nightlife_rating, transport_rating, housing_studio_usd_month, housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c, climate_summary, sunshine_hours_year, cost_pct_rent, cost_pct_dining, cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other, travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week, lifestyle_tags, currency, last_updated FROM cities ${whereClause} ORDER BY ${sortField} ${sortOrder} LIMIT ? OFFSET ?`);
+    console.log('SQL Query:', `SELECT id, slug, name, country, description, monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score, nightlife_rating, transport_rating, housing_studio_usd_month, housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c, climate_summary, internet_speed, cost_pct_rent, cost_pct_dining, cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other, travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week, lifestyle_tags, currency, last_updated FROM cities ${whereClause} ORDER BY ${sortField} ${sortOrder} LIMIT ? OFFSET ?`);
     
     let cities;
     
@@ -440,11 +440,11 @@ router.get('/', optionalAuth, async (req, res) => {
       console.log('No filters, trying full data query...');
       try {
         const [simpleResult] = await pool.query(
-          `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description, 
+          `SELECT id, slug, name, country, description, 
                   monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
                   nightlife_rating, transport_rating, housing_studio_usd_month, 
                   housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c,
-                  climate_summary, sunshine_hours_year, cost_pct_rent, cost_pct_dining,
+                  climate_summary, internet_speed, cost_pct_rent, cost_pct_dining,
                   cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other,
                   travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week,
                   lifestyle_tags, currency, last_updated
@@ -460,11 +460,11 @@ router.get('/', optionalAuth, async (req, res) => {
     } else {
       // Try using query instead of execute to avoid parameter binding issues
       const [citiesResult] = await pool.query(
-        `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
+        `SELECT id, slug, name, country, description,
                 monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
                 nightlife_rating, transport_rating, housing_studio_usd_month, 
                 housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c,
-                climate_summary, sunshine_hours_year, cost_pct_rent, cost_pct_dining,
+                climate_summary, internet_speed, cost_pct_rent, cost_pct_dining,
                 cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other,
                 travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week,
                 lifestyle_tags, currency, last_updated
@@ -513,11 +513,11 @@ router.get('/:id', optionalAuth, async (req, res) => {
     const { id } = req.params;
 
     const [cities] = await pool.execute(
-      `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
-              visa_requirement_us, monthly_cost_usd, avg_pay_rate_usd_hour, 
+      `SELECT id, slug, name, country, description,
+              visa_requirement, monthly_cost_usd, avg_pay_rate_usd_hour, 
               weather_avg_temp_c, safety_score, nightlife_rating, transport_rating,
               housing_studio_usd_month, housing_one_bed_usd_month, housing_coliving_usd_month,
-              climate_avg_temp_c, climate_summary, sunshine_hours_year, cost_pct_rent,
+              climate_avg_temp_c, climate_summary, internet_speed, cost_pct_rent,
               cost_pct_dining, cost_pct_transport, cost_pct_groceries, cost_pct_coworking,
               cost_pct_other, travel_flight_from_usd, travel_local_transport_usd_week,
               travel_hotel_usd_week, lifestyle_tags, currency, last_updated
@@ -554,11 +554,11 @@ router.get('/slug/:slug', optionalAuth, async (req, res) => {
     const { slug } = req.params;
 
     const [cities] = await pool.execute(
-      `SELECT id, slug, name, country, iso2, lat, lon, hero_image_url, description,
-              visa_requirement_us, monthly_cost_usd, avg_pay_rate_usd_hour, 
+      `SELECT id, slug, name, country, description,
+              visa_requirement, monthly_cost_usd, avg_pay_rate_usd_hour, 
               weather_avg_temp_c, safety_score, nightlife_rating, transport_rating,
               housing_studio_usd_month, housing_one_bed_usd_month, housing_coliving_usd_month,
-              climate_avg_temp_c, climate_summary, sunshine_hours_year, cost_pct_rent,
+              climate_avg_temp_c, climate_summary, internet_speed, cost_pct_rent,
               cost_pct_dining, cost_pct_transport, cost_pct_groceries, cost_pct_coworking,
               cost_pct_other, travel_flight_from_usd, travel_local_transport_usd_week,
               travel_hotel_usd_week, lifestyle_tags, currency, last_updated

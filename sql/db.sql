@@ -31,39 +31,29 @@ CREATE TABLE cities (
   slug VARCHAR(128) NOT NULL UNIQUE,
   name VARCHAR(128) NOT NULL,
   country VARCHAR(128) NOT NULL,
-  iso2 CHAR(2),
-  lat DECIMAL(9,6),
-  lon DECIMAL(9,6),
-  hero_image_url VARCHAR(512),
   description TEXT,
-  visa_requirement_us TEXT,
-
+  visa_requirement TEXT,
   monthly_cost_usd DECIMAL(10,2),
   avg_pay_rate_usd_hour DECIMAL(8,2),
   weather_avg_temp_c DECIMAL(4,1),
   safety_score DECIMAL(5,2),
   nightlife_rating DECIMAL(4,2),
   transport_rating DECIMAL(4,2),
-
   housing_studio_usd_month DECIMAL(10,2),
   housing_one_bed_usd_month DECIMAL(10,2),
   housing_coliving_usd_month DECIMAL(10,2),
-
   climate_avg_temp_c DECIMAL(4,1),
   climate_summary VARCHAR(128),
-  sunshine_hours_year INT,
-
+  internet_speed VARCHAR (128),
   cost_pct_rent DECIMAL(5,2),
   cost_pct_dining DECIMAL(5,2),
   cost_pct_transport DECIMAL(5,2),
   cost_pct_groceries DECIMAL(5,2),
   cost_pct_coworking DECIMAL(5,2),
   cost_pct_other DECIMAL(5,2),
-
   travel_flight_from_usd DECIMAL(10,2),
   travel_local_transport_usd_week DECIMAL(10,2),
   travel_hotel_usd_week DECIMAL(10,2),
-
   lifestyle_tags JSON,
   currency CHAR(3) DEFAULT 'USD',
   last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
