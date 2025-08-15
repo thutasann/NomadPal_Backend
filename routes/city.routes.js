@@ -429,19 +429,67 @@ router.get('/', optionalAuth, async (req, res) => {
     const finalParams = [...whereParams, finalLimit, finalOffset];
     console.log('Final query params:', finalParams);
     console.log('Parameter types:', finalParams.map(p => ({ value: p, type: typeof p, isNaN: isNaN(p) })));
+    
+    // Try to fetch cities directly from Python service first
+    let cities = [];
+    try {
+      const isAvailable = await pythonService.isAvailable();
+      if (isAvailable) {
+        console.log('🐍 Fetching cities directly from Python ML service...');
+        
+        // Check if we have filters that need special handling
+        if (country) {
+          // Use country-specific endpoint
+          const mlResult = await pythonService.getCitiesByCountry(country, finalLimit);
+          if (mlResult.success) {
+            cities = mlResult.data;
+            console.log(`✅ Got ${cities.length} cities from Python service for country: ${country}`);
+          }
+        } else {
+          // Get top cities based on ML predictions
+          const mlResult = await pythonService.getTopCities(finalLimit);
+          if (mlResult.success) {
+            cities = mlResult.data;
+            console.log(`✅ Got ${cities.length} cities from Python ML service`);
+          }
+        }
+        
+        // Add ml_enhanced flag
+        cities = cities.map(city => ({ ...city, ml_enhanced: true }));
+      }
+    } catch (mlError) {
+      console.warn('⚠️ Python ML service error:', mlError.message);
+    }
 
-    // Get cities - return full city data for proper filtering
-    console.log('Executing cities query with params:', finalParams);
-    console.log('SQL Query:', `SELECT id, slug, name, country, description, monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score, nightlife_rating, transport_rating, housing_studio_usd_month, housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c, climate_summary, internet_speed, cost_pct_rent, cost_pct_dining, cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other, travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week, lifestyle_tags, currency, last_updated FROM cities ${whereClause} ORDER BY ${sortField} ${sortOrder} LIMIT ? OFFSET ?`);
-    
-    let cities;
-    
-    // If no filters, try a simple query first
-    if (whereParams.length === 0) {
-      console.log('No filters, trying full data query...');
-      try {
-        const [simpleResult] = await pool.query(
-          `SELECT id, slug, name, country, description, 
+    // Fallback to database query if Python service failed or returned no data
+    if (cities.length === 0) {
+      console.log('🗄️ Falling back to database query...');
+      
+      // If no filters, try a simple query first
+      if (whereParams.length === 0) {
+        try {
+          const [simpleResult] = await pool.query(
+            `SELECT id, slug, name, country, description, 
+                    monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
+                    nightlife_rating, transport_rating, housing_studio_usd_month, 
+                    housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c,
+                    climate_summary, internet_speed, cost_pct_rent, cost_pct_dining,
+                    cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other,
+                    travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week,
+                    lifestyle_tags, currency, last_updated
+             FROM cities ORDER BY ${sortField} ${sortOrder} LIMIT ? OFFSET ?`,
+            [finalLimit, finalOffset]
+          );
+          cities = simpleResult;
+          console.log('📊 Database query successful, got', cities.length, 'cities');
+        } catch (simpleError) {
+          console.error('❌ Database query failed:', simpleError);
+          throw simpleError;
+        }
+      } else {
+        // Apply filters in database query
+        const [citiesResult] = await pool.query(
+          `SELECT id, slug, name, country, description,
                   monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
                   nightlife_rating, transport_rating, housing_studio_usd_month, 
                   housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c,
@@ -449,60 +497,19 @@ router.get('/', optionalAuth, async (req, res) => {
                   cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other,
                   travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week,
                   lifestyle_tags, currency, last_updated
-           FROM cities ORDER BY name ASC LIMIT ? OFFSET ?`,
-          [finalLimit, finalOffset]
+           FROM cities ${whereClause} ORDER BY ${sortField} ${sortOrder} LIMIT ? OFFSET ?`,
+          finalParams
         );
-        cities = simpleResult;
-        console.log('Full data query successful, got', cities.length, 'cities');
-      } catch (simpleError) {
-        console.error('Full data query failed:', simpleError);
-        throw simpleError;
+        cities = citiesResult;
+        console.log('📊 Filtered database query successful, got', cities.length, 'cities');
       }
-    } else {
-      // Try using query instead of execute to avoid parameter binding issues
-      const [citiesResult] = await pool.query(
-        `SELECT id, slug, name, country, description,
-                monthly_cost_usd, avg_pay_rate_usd_hour, weather_avg_temp_c, safety_score,
-                nightlife_rating, transport_rating, housing_studio_usd_month, 
-                housing_one_bed_usd_month, housing_coliving_usd_month, climate_avg_temp_c,
-                climate_summary, internet_speed, cost_pct_rent, cost_pct_dining,
-                cost_pct_transport, cost_pct_groceries, cost_pct_coworking, cost_pct_other,
-                travel_flight_from_usd, travel_local_transport_usd_week, travel_hotel_usd_week,
-                lifestyle_tags, currency, last_updated
-         FROM cities ${whereClause} ORDER BY ${sortField} ${sortOrder} LIMIT ? OFFSET ?`,
-        finalParams
-      );
-      cities = citiesResult;
-    }
-
-    // Try to enhance cities with ML predictions from Python service
-    try {
-      const isAvailable = await pythonService.isAvailable();
-      if (isAvailable) {
-        // Get ML predictions for all cities
-        const mlResult = await pythonService.getTopCities(1000); // Get a large batch to match against
-        
-        if (mlResult.success && mlResult.data.length > 0) {
-          // Merge ML predictions with database data
-          const enhancedCities = pythonService.mergeCityData(cities, mlResult.data);
-          
-          // If we have ML enhancements and no specific sort is requested, sort by predicted score
-          if (sort_by === 'name' && sort_order === 'ASC') {
-            enhancedCities.sort((a, b) => (b.predicted_score || 0) - (a.predicted_score || 0));
-          }
-          
-          cities = enhancedCities;
-          console.log(`✅ Enhanced ${cities.length} cities with ML predictions`);
-        }
-      } else {
-        // Add default predicted_score if Python service is unavailable
-        cities = cities.map(city => ({ ...city, predicted_score: 0, ml_enhanced: false }));
-        console.log('⚠️ Python ML service unavailable, using database-only results');
-      }
-    } catch (mlError) {
-      // If ML service fails, continue with database-only results
-      cities = cities.map(city => ({ ...city, predicted_score: 0, ml_enhanced: false }));
-      console.warn('⚠️ ML service error:', mlError.message);
+      
+      // Add default ML fields for database results
+      cities = cities.map(city => ({ 
+        ...city, 
+        predicted_score: 0, 
+        ml_enhanced: false 
+      }));
     }
 
     // Add saved status for authenticated users
