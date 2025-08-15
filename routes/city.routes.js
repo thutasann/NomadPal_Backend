@@ -8,6 +8,7 @@ const {
   sanitizeInput 
 } = require('../utils/helpers');
 const { pool } = require('../config/database');
+const pythonService = require('../services/python.service');
 
 // Get popular cities (based on safety score and cost efficiency)
 router.get('/popular', optionalAuth, async (req, res) => {
@@ -472,6 +473,36 @@ router.get('/', optionalAuth, async (req, res) => {
         finalParams
       );
       cities = citiesResult;
+    }
+
+    // Try to enhance cities with ML predictions from Python service
+    try {
+      const isAvailable = await pythonService.isAvailable();
+      if (isAvailable) {
+        // Get ML predictions for all cities
+        const mlResult = await pythonService.getTopCities(1000); // Get a large batch to match against
+        
+        if (mlResult.success && mlResult.data.length > 0) {
+          // Merge ML predictions with database data
+          const enhancedCities = pythonService.mergeCityData(cities, mlResult.data);
+          
+          // If we have ML enhancements and no specific sort is requested, sort by predicted score
+          if (sort_by === 'name' && sort_order === 'ASC') {
+            enhancedCities.sort((a, b) => (b.predicted_score || 0) - (a.predicted_score || 0));
+          }
+          
+          cities = enhancedCities;
+          console.log(`✅ Enhanced ${cities.length} cities with ML predictions`);
+        }
+      } else {
+        // Add default predicted_score if Python service is unavailable
+        cities = cities.map(city => ({ ...city, predicted_score: 0, ml_enhanced: false }));
+        console.log('⚠️ Python ML service unavailable, using database-only results');
+      }
+    } catch (mlError) {
+      // If ML service fails, continue with database-only results
+      cities = cities.map(city => ({ ...city, predicted_score: 0, ml_enhanced: false }));
+      console.warn('⚠️ ML service error:', mlError.message);
     }
 
     // Add saved status for authenticated users
