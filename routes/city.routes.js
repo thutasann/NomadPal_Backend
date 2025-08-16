@@ -545,6 +545,175 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
+// Get user's saved cities
+router.get('/saved', async (req, res) => {
+  console.log('🔍 GET /saved route hit');
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    
+    if (!token) {
+      return errorResponse(res, 'Authentication required', 401);
+    }
+
+    // Verify token and get user
+    const jwt = require('jsonwebtoken');
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      return errorResponse(res, 'Invalid token', 401);
+    }
+
+    const userId = decoded.userId;
+    
+    // Validate user ID
+    if (!userId) {
+      console.error('User ID is undefined from token:', decoded);
+      return errorResponse(res, 'Invalid user token', 401);
+    }
+
+    const userIdStr = String(userId);
+    const { page = 1, limit = 20 } = req.query;
+
+    // Ensure page and limit are numbers
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 20;
+    
+    console.log('Pagination debug - pageNum:', pageNum, 'limitNum:', limitNum);
+    
+    // Calculate pagination manually to avoid any import issues
+    const finalLimit = Math.max(1, Math.min(parseInt(limitNum) || 20, 100)); // Ensure between 1-100
+    const finalOffset = Math.max(0, (parseInt(pageNum) || 1) - 1) * finalLimit;
+    
+    console.log('Manual pagination - finalLimit:', finalLimit, 'finalOffset:', finalOffset);
+    
+    // Additional validation to ensure we have valid numbers
+    if (isNaN(finalLimit) || isNaN(finalOffset)) {
+      console.error('Invalid pagination values - finalLimit:', finalLimit, 'finalOffset:', finalOffset);
+      return errorResponse(res, 'Internal server error', 500);
+    }
+    
+    // Ensure positive values
+    if (finalLimit < 0 || finalOffset < 0) {
+      console.error('Negative pagination values - finalLimit:', finalLimit, 'finalOffset:', finalOffset);
+      return errorResponse(res, 'Internal server error', 500);
+    }
+
+    // Get total count of saved cities
+    const [countResult] = await pool.execute(
+      'SELECT COUNT(*) as total FROM saved_cities WHERE user_id = ?',
+      [userIdStr]
+    );
+    const total = countResult[0].total;
+
+    // Get saved cities
+    console.log('SQL Query params - userIdStr:', userIdStr, 'finalLimit:', finalLimit, 'finalOffset:', finalOffset);
+    console.log('SQL Query params types:', typeof userIdStr, typeof finalLimit, typeof finalOffset);
+    
+    // Validate parameters before SQL execution
+    if (!userIdStr || finalLimit === undefined || finalLimit === null || finalOffset === undefined || finalOffset === null) {
+      console.error('Invalid parameters for SQL query:', { userIdStr, finalLimit, finalOffset });
+      return errorResponse(res, 'Internal server error', 500);
+    }
+    
+    // Convert to explicit numbers for MySQL
+    const mysqlLimit = Number(finalLimit);
+    const mysqlOffset = Number(finalOffset);
+    
+    console.log('MySQL params - userIdStr:', userIdStr, 'mysqlLimit:', mysqlLimit, 'mysqlOffset:', mysqlOffset);
+    console.log('MySQL param types:', typeof userIdStr, typeof mysqlLimit, typeof mysqlOffset);
+    
+    // Test with hardcoded values first to isolate the issue
+    console.log('Testing with hardcoded values first...');
+    try {
+      const [testResult] = await pool.execute(
+        'SELECT COUNT(*) as test FROM saved_cities WHERE user_id = ? LIMIT 1',
+        [userIdStr]
+      );
+      console.log('Test query successful:', testResult);
+    } catch (testError) {
+      console.error('Test query failed:', testError);
+    }
+    
+    // Try a simpler query first to isolate the issue
+    console.log('Attempting simple query first...');
+    let savedCities = [];
+    
+    try {
+      // First, get all saved cities without pagination to test the basic query
+      const [allSavedCities] = await pool.execute(
+        `SELECT c.id, c.slug, c.name, c.country, c.description,
+                c.monthly_cost_usd, c.avg_pay_rate_usd_hour, c.weather_avg_temp_c, c.safety_score,
+                c.nightlife_rating, c.transport_rating, c.climate_avg_temp_c, c.climate_summary,
+                c.lifestyle_tags, c.currency, c.last_updated
+         FROM saved_cities sc
+         JOIN cities c ON sc.city_id = c.id
+         WHERE sc.user_id = ?`,
+        [userIdStr]
+      );
+      
+      console.log('Simple query successful, got', allSavedCities.length, 'cities');
+      
+      // Apply pagination manually in JavaScript
+      const startIndex = mysqlOffset;
+      const endIndex = startIndex + mysqlLimit;
+      savedCities = allSavedCities.slice(startIndex, endIndex);
+      
+      console.log('Applied pagination manually - startIndex:', startIndex, 'endIndex:', endIndex, 'result:', savedCities.length);
+      
+    } catch (simpleQueryError) {
+      console.error('Simple query failed:', simpleQueryError);
+      
+      // Fallback: try with hardcoded values
+      console.log('Trying fallback with hardcoded values...');
+      try {
+        const [fallbackResult] = await pool.execute(
+          `SELECT c.id, c.slug, c.name, c.country, c.description,
+                  c.monthly_cost_usd, c.avg_pay_rate_usd_hour, c.weather_avg_temp_c, c.safety_score,
+                  c.nightlife_rating, c.transport_rating, c.climate_avg_temp_c, c.climate_summary,
+                  c.lifestyle_tags, c.currency, c.last_updated
+           FROM saved_cities sc
+           JOIN cities c ON sc.city_id = c.id
+           WHERE sc.user_id = ?
+           ORDER BY c.name
+           LIMIT 20 OFFSET 0`,
+          [userIdStr]
+        );
+        
+        savedCities = fallbackResult;
+        console.log('Fallback query successful, got', savedCities.length, 'cities');
+        
+      } catch (fallbackError) {
+        console.error('Fallback query also failed:', fallbackError);
+        throw fallbackError;
+      }
+    }
+
+    // Add is_saved flag (always true for saved cities)
+    const cities = savedCities.map(city => ({ ...city, is_saved: true }));
+
+    const totalPages = Math.ceil(total / finalLimit);
+    const hasNextPage = pageNum < totalPages;
+    const hasPrevPage = pageNum > 1;
+
+    successResponse(res, {
+      cities,
+      pagination: {
+        current_page: pageNum,
+        total_pages: totalPages,
+        total_items: total,
+        items_per_page: finalLimit,
+        has_next_page: hasNextPage,
+        has_prev_page: hasPrevPage
+      }
+    }, 'Saved cities retrieved successfully');
+
+  } catch (error) {
+    console.error('Get saved cities error:', error);
+    errorResponse(res, 'Failed to retrieve saved cities', 500);
+  }
+});
+
 // Get city by ID
 router.get('/:id', optionalAuth, async (req, res) => {
   try {
@@ -629,9 +798,11 @@ router.get('/slug/:slug', optionalAuth, async (req, res) => {
 
 // Save/unsave a city for authenticated user
 router.post('/:id/save', async (req, res) => {
+  console.log('🔍 POST /:id/save route hit with id:', req.params.id);
   try {
     const { id } = req.params;
-    console.log("city id", id);
+    console.log("city id:", id, "type:", typeof id);
+    
     const token = req.headers.authorization?.split(' ')[1];
     
     if (!token) {
@@ -647,13 +818,30 @@ router.post('/:id/save', async (req, res) => {
       return errorResponse(res, 'Invalid token', 401);
     }
 
-    const userId = decoded.id;
-    console.log("user id :: ", userId)
+    const userId = decoded.userId;
+    console.log("user id:", userId, "type:", typeof userId);
+
+    // Validate parameters
+    if (!userId) {
+      console.error('User ID is undefined from token:', decoded);
+      return errorResponse(res, 'Invalid user token', 401);
+    }
+
+    if (!id) {
+      console.error('City ID is undefined from params');
+      return errorResponse(res, 'City ID is required', 400);
+    }
+
+    // Convert to strings to ensure proper format for CHAR(24) columns
+    const userIdStr = String(userId);
+    const cityIdStr = String(id);
+
+    console.log("Using userIdStr:", userIdStr, "cityIdStr:", cityIdStr);
 
     // Check if city exists
     const [cityCheck] = await pool.execute(
       'SELECT id FROM cities WHERE id = ?',
-      [id]
+      [cityIdStr]
     );
 
     if (cityCheck.length === 0) {
@@ -663,14 +851,14 @@ router.post('/:id/save', async (req, res) => {
     // Check if already saved
     const [existingSave] = await pool.execute(
       'SELECT 1 FROM saved_cities WHERE user_id = ? AND city_id = ?',
-      [userId, id]
+      [userIdStr, cityIdStr]
     );
 
     if (existingSave.length > 0) {
       // Already saved, so unsave it
       await pool.execute(
         'DELETE FROM saved_cities WHERE user_id = ? AND city_id = ?',
-        [userId, id]
+        [userIdStr, cityIdStr]
       );
       
       successResponse(res, { is_saved: false }, 'City removed from saved list');
@@ -678,7 +866,7 @@ router.post('/:id/save', async (req, res) => {
       // Not saved, so save it
       await pool.execute(
         'INSERT INTO saved_cities (user_id, city_id) VALUES (?, ?)',
-        [userId, id]
+        [userIdStr, cityIdStr]
       );
       
       successResponse(res, { is_saved: true }, 'City saved successfully');
@@ -686,80 +874,14 @@ router.post('/:id/save', async (req, res) => {
 
   } catch (error) {
     console.error('Save city error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
     errorResponse(res, 'Failed to save/unsave city', 500);
-  }
-});
-
-// Get user's saved cities
-router.get('/saved', async (req, res) => {
-  try {
-    const token = req.headers.authorization?.split(' ')[1];
-    
-    if (!token) {
-      return errorResponse(res, 'Authentication required', 401);
-    }
-
-    // Verify token and get user
-    const jwt = require('jsonwebtoken');
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (error) {
-      return errorResponse(res, 'Invalid token', 401);
-    }
-
-    const userId = decoded.id;
-    const { page = 1, limit = 20 } = req.query;
-
-    // Ensure page and limit are numbers
-    const pageNum = parseInt(page) || 1;
-    const limitNum = parseInt(limit) || 20;
-    
-    const { offset, limit: queryLimit } = paginateResults(pageNum, limitNum);
-
-    // Get total count of saved cities
-    const [countResult] = await pool.execute(
-      'SELECT COUNT(*) as total FROM saved_cities WHERE user_id = ?',
-      [userId]
-    );
-    const total = countResult[0].total;
-
-    // Get saved cities
-    const [savedCities] = await pool.execute(
-      `SELECT c.id, c.slug, c.name, c.country, c.description,
-              c.monthly_cost_usd, c.avg_pay_rate_usd_hour, c.weather_avg_temp_c, c.safety_score,
-              c.nightlife_rating, c.transport_rating, c.climate_avg_temp_c, c.climate_summary,
-              c.lifestyle_tags, c.currency, c.last_updated
-       FROM saved_cities sc
-       JOIN cities c ON sc.city_id = c.id
-       WHERE sc.user_id = ?
-       ORDER BY c.name
-       LIMIT ? OFFSET ?`,
-      [userId, queryLimit, offset]
-    );
-
-    // Add is_saved flag (always true for saved cities)
-    const cities = savedCities.map(city => ({ ...city, is_saved: true }));
-
-    const totalPages = Math.ceil(total / queryLimit);
-    const hasNextPage = pageNum < totalPages;
-    const hasPrevPage = pageNum > 1;
-
-    successResponse(res, {
-      cities,
-      pagination: {
-        current_page: pageNum,
-        total_pages: totalPages,
-        total_items: total,
-        items_per_page: queryLimit,
-        has_next_page: hasNextPage,
-        has_prev_page: hasPrevPage
-      }
-    }, 'Saved cities retrieved successfully');
-
-  } catch (error) {
-    console.error('Get saved cities error:', error);
-    errorResponse(res, 'Failed to retrieve saved cities', 500);
   }
 });
 
