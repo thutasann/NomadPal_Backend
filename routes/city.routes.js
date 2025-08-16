@@ -545,6 +545,102 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
+// Get personalized city recommendations based on user preferences
+router.get('/personalized', async (req, res) => {
+  console.log('🔍 GET /personalized route hit');
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    
+    if (!token) {
+      return errorResponse(res, 'Authentication required', 401);
+    }
+
+    // Verify token and get user
+    const jwt = require('jsonwebtoken');
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      return errorResponse(res, 'Invalid token', 401);
+    }
+
+    const userId = decoded.userId;
+    
+    // Validate user ID
+    if (!userId) {
+      console.error('User ID is undefined from token:', decoded);
+      return errorResponse(res, 'Invalid user token', 401);
+    }
+
+    const userIdStr = String(userId);
+    const { limit = 20, page = 1 } = req.query;
+    const limitNum = Math.min(parseInt(limit) || 20, 100);
+    const pageNum = Math.max(parseInt(page) || 1, 1);
+
+    // Get user preferences from database
+    const [userPrefs] = await pool.execute(
+      `SELECT monthly_budget_min_usd, monthly_budget_max_usd, preferred_climate, 
+              timezone, lifestyle_priorities, monthly_budget_min_usd, monthly_budget_max_usd
+       FROM users WHERE id = ?`,
+      [userIdStr]
+    );
+
+    if (userPrefs.length === 0) {
+      return errorResponse(res, 'User not found', 404);
+    }
+
+    const userPreferences = userPrefs[0];
+    
+    // Parse lifestyle priorities if it's a JSON string
+    if (userPreferences.lifestyle_priorities && typeof userPreferences.lifestyle_priorities === 'string') {
+      try {
+        userPreferences.lifestyle_priorities = JSON.parse(userPreferences.lifestyle_priorities);
+      } catch (e) {
+        userPreferences.lifestyle_priorities = [];
+      }
+    }
+
+    console.log('User preferences:', userPreferences);
+
+    // Get personalized recommendations from Python ML service with pagination
+    const mlResult = await pythonService.getPersonalizedCities(userPreferences, {
+      limit: limitNum,
+      page: pageNum
+    });
+    
+    if (mlResult.success) {
+      // Add saved status for authenticated users
+      const cities = mlResult.data;
+      for (let city of cities) {
+        const [savedResult] = await pool.execute(
+          'SELECT 1 FROM saved_cities WHERE user_id = ? AND city_id = ?',
+          [userIdStr, city.id]
+        );
+        city.is_saved = savedResult.length > 0;
+      }
+
+      successResponse(res, {
+        cities,
+        pagination: {
+          current_page: mlResult.current_page,
+          total_pages: mlResult.total_pages,
+          total_items: mlResult.total,
+          items_per_page: mlResult.limit,
+          has_next_page: mlResult.has_next_page,
+          has_prev_page: mlResult.has_prev_page
+        },
+        user_preferences: mlResult.userPreferences
+      }, 'Personalized city recommendations retrieved successfully');
+    } else {
+      errorResponse(res, 'Failed to get personalized recommendations', 500);
+    }
+
+  } catch (error) {
+    console.error('Get personalized cities error:', error);
+    errorResponse(res, 'Failed to retrieve personalized cities', 500);
+  }
+});
+
 // Get user's saved cities
 router.get('/saved', async (req, res) => {
   console.log('🔍 GET /saved route hit');

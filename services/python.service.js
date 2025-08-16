@@ -184,6 +184,48 @@ class PythonService {
   }
 
   /**
+   * Get personalized city recommendations based on user preferences
+   * @param {Object} userPreferences - User preference data from database
+   * @param {Object} params - Query parameters including pagination
+   * @param {number} params.limit - Number of cities to return (default: 20, max: 100)
+   * @param {number} params.page - Page number (default: 1)
+   * @returns {Promise<Object>} Personalized city recommendations
+   */
+  async getPersonalizedCities(userPreferences, params = {}) {
+    try {
+      if (!userPreferences || typeof userPreferences !== 'object') {
+        throw new Error('User preferences are required and must be an object');
+      }
+
+      const { limit = 20, page = 1 } = params;
+      const validatedLimit = Math.min(limit, 100);
+      const validatedPage = Math.max(page, 1);
+
+      const response = await this.client.post('/cities/personalized', userPreferences, {
+        params: { 
+          limit: validatedLimit,
+          page: validatedPage
+        }
+      });
+      
+      return {
+        success: true,
+        data: response.data.data,
+        total: response.data.total,
+        limit: response.data.limit,
+        offset: response.data.offset,
+        current_page: response.data.current_page,
+        total_pages: response.data.total_pages,
+        has_next_page: response.data.has_next_page,
+        has_prev_page: response.data.has_prev_page,
+        userPreferences: response.data.user_preferences
+      };
+    } catch (error) {
+      throw this.handleError('getPersonalizedCities', error);
+    }
+  }
+
+  /**
    * Merge ML predictions with database city data
    * @param {Array} dbCities - Cities from database
    * @param {Array} mlCities - Cities with ML predictions
