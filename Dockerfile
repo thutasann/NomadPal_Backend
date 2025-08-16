@@ -12,6 +12,17 @@ WORKDIR /app
 # Set production environment
 ENV NODE_ENV="production"
 
+# Environment variables for the application
+ENV PORT=8000
+ENV DB_HOST="shuttle.proxy.rlwy.net"
+ENV DB_USER="root"
+ENV DB_PASSWORD="KpzlJjcyOhlHvBLmLkjnIMsFnDmzFZPM"
+ENV DB_NAME="nomadpal_db"
+ENV DB_PORT=19877
+ENV JWT_SECRET="your_super_secret_jwt_key_here"
+ENV JWT_EXPIRES_IN="7d"
+ENV PYTHON_SERVICE_URL="https://nomadpal-model.fly.dev"
+
 
 # Throw-away build stage to reduce size of final image
 FROM base AS build
@@ -35,5 +46,5 @@ FROM base
 COPY --from=build /app /app
 
 # Start the server by default, this can be overwritten at runtime
-EXPOSE 3000
+EXPOSE 8000
 CMD [ "npm", "run", "start" ]
