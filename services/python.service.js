@@ -208,18 +208,40 @@ class PythonService {
         }
       });
       
-      return {
+      console.log('🐍 Python service response:', {
+        status: response.data.status,
+        dataCount: response.data.data?.length,
+        total: response.data.total,
+        limit: response.data.limit,
+        pagination: response.data.pagination
+      });
+      
+      // Extract pagination from the response
+      const pagination = response.data.pagination || {};
+      
+      const result = {
         success: true,
         data: response.data.data,
         total: response.data.total,
         limit: response.data.limit,
-        offset: response.data.offset,
-        current_page: response.data.current_page,
-        total_pages: response.data.total_pages,
-        has_next_page: response.data.has_next_page,
-        has_prev_page: response.data.has_prev_page,
+        offset: pagination.offset,
+        current_page: pagination.current_page,
+        total_pages: pagination.total_pages,
+        has_next_page: pagination.has_next_page,
+        has_prev_page: pagination.has_prev_page,
         userPreferences: response.data.user_preferences
       };
+      
+      console.log('🎯 Python service returning:', {
+        success: result.success,
+        dataCount: result.data?.length,
+        total: result.total,
+        current_page: result.current_page,
+        total_pages: result.total_pages,
+        has_next_page: result.has_next_page
+      });
+      
+      return result;
     } catch (error) {
       throw this.handleError('getPersonalizedCities', error);
     }
