@@ -574,7 +574,7 @@ router.get('/personalized', async (req, res) => {
 
     const userIdStr = String(userId);
     const { limit = 20, page = 1 } = req.query;
-    const limitNum = Math.min(parseInt(limit) || 20, 100);
+    const limitNum = Math.min(parseInt(limit) || 20, 200);  // Increased max limit to 200
     const pageNum = Math.max(parseInt(page) || 1, 1);
 
     // Get user preferences from database

@@ -198,7 +198,7 @@ class PythonService {
       }
 
       const { limit = 20, page = 1 } = params;
-      const validatedLimit = Math.min(limit, 100);
+      const validatedLimit = Math.min(limit, 200);  // Increased max limit to 200
       const validatedPage = Math.max(page, 1);
 
       const response = await this.client.post('/cities/personalized', userPreferences, {
