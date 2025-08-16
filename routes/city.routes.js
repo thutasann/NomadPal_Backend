@@ -627,6 +627,142 @@ router.get('/slug/:slug', optionalAuth, async (req, res) => {
   }
 });
 
+// Save/unsave a city for authenticated user
+router.post('/:id/save', async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log("city id", id);
+    const token = req.headers.authorization?.split(' ')[1];
+    
+    if (!token) {
+      return errorResponse(res, 'Authentication required', 401);
+    }
+
+    // Verify token and get user
+    const jwt = require('jsonwebtoken');
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      return errorResponse(res, 'Invalid token', 401);
+    }
+
+    const userId = decoded.id;
+    console.log("user id :: ", userId)
+
+    // Check if city exists
+    const [cityCheck] = await pool.execute(
+      'SELECT id FROM cities WHERE id = ?',
+      [id]
+    );
+
+    if (cityCheck.length === 0) {
+      return errorResponse(res, 'City not found', 404);
+    }
+
+    // Check if already saved
+    const [existingSave] = await pool.execute(
+      'SELECT 1 FROM saved_cities WHERE user_id = ? AND city_id = ?',
+      [userId, id]
+    );
+
+    if (existingSave.length > 0) {
+      // Already saved, so unsave it
+      await pool.execute(
+        'DELETE FROM saved_cities WHERE user_id = ? AND city_id = ?',
+        [userId, id]
+      );
+      
+      successResponse(res, { is_saved: false }, 'City removed from saved list');
+    } else {
+      // Not saved, so save it
+      await pool.execute(
+        'INSERT INTO saved_cities (user_id, city_id) VALUES (?, ?)',
+        [userId, id]
+      );
+      
+      successResponse(res, { is_saved: true }, 'City saved successfully');
+    }
+
+  } catch (error) {
+    console.error('Save city error:', error);
+    errorResponse(res, 'Failed to save/unsave city', 500);
+  }
+});
+
+// Get user's saved cities
+router.get('/saved', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    
+    if (!token) {
+      return errorResponse(res, 'Authentication required', 401);
+    }
+
+    // Verify token and get user
+    const jwt = require('jsonwebtoken');
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      return errorResponse(res, 'Invalid token', 401);
+    }
+
+    const userId = decoded.id;
+    const { page = 1, limit = 20 } = req.query;
+
+    // Ensure page and limit are numbers
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 20;
+    
+    const { offset, limit: queryLimit } = paginateResults(pageNum, limitNum);
+
+    // Get total count of saved cities
+    const [countResult] = await pool.execute(
+      'SELECT COUNT(*) as total FROM saved_cities WHERE user_id = ?',
+      [userId]
+    );
+    const total = countResult[0].total;
+
+    // Get saved cities
+    const [savedCities] = await pool.execute(
+      `SELECT c.id, c.slug, c.name, c.country, c.description,
+              c.monthly_cost_usd, c.avg_pay_rate_usd_hour, c.weather_avg_temp_c, c.safety_score,
+              c.nightlife_rating, c.transport_rating, c.climate_avg_temp_c, c.climate_summary,
+              c.lifestyle_tags, c.currency, c.last_updated
+       FROM saved_cities sc
+       JOIN cities c ON sc.city_id = c.id
+       WHERE sc.user_id = ?
+       ORDER BY c.name
+       LIMIT ? OFFSET ?`,
+      [userId, queryLimit, offset]
+    );
+
+    // Add is_saved flag (always true for saved cities)
+    const cities = savedCities.map(city => ({ ...city, is_saved: true }));
+
+    const totalPages = Math.ceil(total / queryLimit);
+    const hasNextPage = pageNum < totalPages;
+    const hasPrevPage = pageNum > 1;
+
+    successResponse(res, {
+      cities,
+      pagination: {
+        current_page: pageNum,
+        total_pages: totalPages,
+        total_items: total,
+        items_per_page: queryLimit,
+        has_next_page: hasNextPage,
+        has_prev_page: hasPrevPage
+      }
+    }, 'Saved cities retrieved successfully');
+
+  } catch (error) {
+    console.error('Get saved cities error:', error);
+    errorResponse(res, 'Failed to retrieve saved cities', 500);
+  }
+});
+
 // Get cost of living breakdown for a city
 router.get('/:id/cost-breakdown', optionalAuth, async (req, res) => {
   try {
